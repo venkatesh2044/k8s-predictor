@@ -1,0 +1,24 @@
+monitoring:
+  interval: 60  # Monitoring interval in seconds
+  prometheus_url: "http://prometheus-server.monitoring.svc.cluster.local:9090"  # Prometheus URL
+  use_kube_config: false  # Whether to use local kube config
+  in_cluster: true  # Whether running inside Kubernetes cluster
+
+prediction:
+  model_dir: "/var/lib/k8s-predictor/models"  # Directory to store models
+  threshold:
+    pod_crash: 0.7
+    node_failure: 0.7
+    resource_exhaustion: 0.8
+
+remediation:
+  enabled: true  # Whether to enable automatic remediation
+  approval_required: false  # Whether remediation actions require approval
+  max_actions_per_cycle: 5  # Maximum number of remediation actions per cycle
+
+logging:
+  level: "INFO"
+  file: "/var/log/k8s-predictor.log"
+
+visualization:
+  output_dir: "/var/lib/k8s-predictor/visualizations"

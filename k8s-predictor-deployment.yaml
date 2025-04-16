@@ -1,0 +1,153 @@
+---
+# Service Account
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: k8s-predictor
+  namespace: kube-system
+---
+# Cluster Role
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: k8s-predictor
+rules:
+- apiGroups: [""]
+  resources: ["nodes", "pods", "services", "configmaps", "namespaces"]
+  verbs: ["get", "list", "watch"]
+- apiGroups: ["apps"]
+  resources: ["deployments", "statefulsets", "daemonsets"]
+  verbs: ["get", "list", "watch", "patch"]
+- apiGroups: ["batch"]
+  resources: ["jobs"]
+  verbs: ["get", "list", "watch", "create", "delete"]
+- apiGroups: [""]
+  resources: ["pods"]
+  verbs: ["delete", "patch", "get", "list"]
+- apiGroups: [""]
+  resources: ["pods/eviction"]
+  verbs: ["create"]
+- apiGroups: [""]
+  resources: ["nodes"]
+  verbs: ["get", "list", "watch", "patch"]
+---
+# Cluster Role Binding
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: k8s-predictor
+subjects:
+- kind: ServiceAccount
+  name: k8s-predictor
+  namespace: kube-system
+roleRef:
+  kind: ClusterRole
+  name: k8s-predictor
+  apiGroup: rbac.authorization.k8s.io
+---
+# Config Map
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: k8s-predictor-config
+  namespace: kube-system
+data:
+  config.yaml: |
+    monitoring:
+      interval: 60
+      prometheus_url: "http://prometheus-server.monitoring.svc.cluster.local:9090"
+      use_kube_config: false
+      in_cluster: true
+
+    prediction:
+      model_dir: "/var/lib/k8s-predictor/models"
+      threshold:
+        pod_crash: 0.7
+        node_failure: 0.7
+        resource_exhaustion: 0.8
+
+    remediation:
+      enabled: true
+      approval_required: false
+      max_actions_per_cycle: 5
+
+    logging:
+      level: "INFO"
+      file: "/var/log/k8s-predictor.log"
+
+    visualization:
+      output_dir: "/var/lib/k8s-predictor/visualizations"
+---
+# Persistent Volume Claims
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: k8s-predictor-models
+  namespace: kube-system
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 1Gi
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: k8s-predictor-logs
+  namespace: kube-system
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 1Gi
+---
+# Deployment
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: k8s-predictor
+  namespace: kube-system
+  labels:
+    app: k8s-predictor
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: k8s-predictor
+  template:
+    metadata:
+      labels:
+        app: k8s-predictor
+    spec:
+      serviceAccountName: k8s-predictor
+      containers:
+      - name: predictor
+        image: k8s-predictor:latest
+        imagePullPolicy: IfNotPresent
+        args: ["-c", "/etc/k8s-predictor/config.yaml"]
+        resources:
+          requests:
+            cpu: 200m
+            memory: 512Mi
+          limits:
+            cpu: 1000m
+            memory: 1Gi
+        volumeMounts:
+        - name: config-volume
+          mountPath: /etc/k8s-predictor
+        - name: models-volume
+          mountPath: /var/lib/k8s-predictor/models
+        - name: logs-volume
+          mountPath: /var/log/k8s-predictor
+      volumes:
+      - name: config-volume
+        configMap:
+          name: k8s-predictor-config
+      - name: models-volume
+        persistentVolumeClaim:
+          claimName: k8s-predictor-models
+      - name: logs-volume
+        persistentVolumeClaim:
+          claimName: k8s-predictor-logs
